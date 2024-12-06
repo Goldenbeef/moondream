@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "moondream"
-version = "0.0.1"
+version = "0.0.5"
 description = "Python client library for moondream"
 authors = ["vik <vik@moondream.ai>"]
 readme = "README.md"
@@ -13,6 +13,8 @@ numpy = "^2.1.2"
 onnx = "^1.17.0"
 tokenizers = "^0.20.1"
 
+[tool.poetry.scripts]
+moondream = "moondream.cli:main"
 
 [tool.pyright]
 venvPath = "."
