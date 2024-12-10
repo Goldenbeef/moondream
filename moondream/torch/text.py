@@ -1,10 +1,9 @@
 import torch
-from typing import Dict, Tuple, Optional, List
 from torch.nn import functional as F
 
-from .rope import apply_rotary_emb, precompute_freqs_cis
 from .layers import layer_norm, linear, mlp
-from .weights import TextModel, AttentionWeights, load_from_safetensors
+from .rope import apply_rotary_emb
+from .weights import AttentionWeights, TextModel
 
 
 def text_encoder(input_ids: torch.Tensor, w: TextModel):
@@ -46,12 +45,11 @@ def attn(
         for t in linear(x, w.qkv).chunk(3, dim=-1)
     ]
 
-    q_rot, q_pass = q.chunk(2, dim=-1)
-    k_rot, k_pass = k.chunk(2, dim=-1)
-    q_rot, k_rot = apply_rotary_emb(q_rot, k_rot, freqs_cis[pos : pos + q_len])
-    q = torch.cat([q_rot, q_pass], dim=-1)
-    k = torch.cat([k_rot, k_pass], dim=-1)
+    position_ids = torch.arange(pos, pos + q_len, dtype=torch.long)
+    q = apply_rotary_emb(q, freqs_cis, position_ids, w.n_heads)
+    k = apply_rotary_emb(k, freqs_cis, position_ids, w.n_heads)
 
+    k_, v_ = k, v
     if layer_kv_cache is not None:
         k = torch.cat([layer_kv_cache[0], k], dim=2)
         v = torch.cat([layer_kv_cache[1], v], dim=2)
@@ -64,7 +62,7 @@ def attn(
     )
     out = out.transpose(1, 2).reshape(bsz, q_len, d_model)
     out = linear(out, w.proj)
-    return out, torch.stack([k, v])
+    return out, torch.stack([k_, v_])
 
 
 def text_decoder(
