@@ -1,21 +1,22 @@
-import torch
 import argparse
+import json
 import os
 
+import torch
 from PIL import Image
 from transformers import AutoTokenizer
-from moondream.hf import Moondream
 
-from .weights import load_from_safetensors
-from .vision import encode_image
-from .text import text_encoder, text_decoder, lm_head
 from .rope import precompute_freqs_cis
+from .text import lm_head, text_decoder, text_encoder
+from .vision import encode_image
+from .weights import load_from_pt, load_from_safetensors
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--image", "-i", type=str, required=True)
     parser.add_argument("--prompt", "-p", type=str, required=True)
     parser.add_argument("--model", "-m", type=str, required=True)
+    parser.add_argument("--config", "-c", type=str, default="{}")
     parser.add_argument("--max-tokens", "-t", type=int, default=200)
     parser.add_argument("--sampler", "-s", type=str, default="greedy")
     args = parser.parse_args()
@@ -25,11 +26,20 @@ if __name__ == "__main__":
     elif torch.backends.mps.is_available():
         torch.set_default_device("mps")
 
+    # Load config.
+    config = json.loads(args.config)
+    text_n_heads = config.get("text_n_heads", 32)
+
     # Load model.
     model_path = args.model
     if not os.path.exists(model_path):
         raise FileNotFoundError(f"Model not found at {model_path}")
-    model = load_from_safetensors(model_path)
+    if model_path.endswith(".pt"):
+        model = load_from_pt(model_path, **config)
+    elif model_path.endswith(".safetensors"):
+        model = load_from_safetensors(model_path, **config)
+    else:
+        raise ValueError(f"Invalid model format: {model_path}")
 
     # Encode image.
     image_path = args.image
@@ -54,15 +64,20 @@ if __name__ == "__main__":
         dim=1,
     )
 
-    kv_cache = torch.empty(24, 2, 1, 32, 0, 64, dtype=torch.float16)
+    kv_cache = torch.empty(24, 2, 1, text_n_heads, 2048, 64, dtype=torch.float16)
     freqs_cis = precompute_freqs_cis(32, 2048)
+    pos = 0
 
     for _ in range(args.max_tokens):
         with torch.no_grad():
-            hidden, kv_cache = text_decoder(
-                inputs_embeds, model.text, kv_cache, freqs_cis
+            hidden, kv_cache_update = text_decoder(
+                inputs_embeds, model.text, kv_cache[:, :, :, :, :pos, :], freqs_cis
             )
             logits = lm_head(hidden, model.text)
+            kv_cache[:, :, :, :, pos : pos + kv_cache_update.size(-2), :] = (
+                kv_cache_update
+            )
+            pos += kv_cache_update.size(-2)
 
             if args.sampler == "multinomial":
                 next_token = torch.multinomial(

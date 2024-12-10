@@ -1,6 +1,7 @@
-from transformers import AutoTokenizer, AutoModelForCausalLM
 from datasets import load_dataset
 from tqdm import tqdm
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
 from ..hf import detect_device
 
 MODEL_ID = "vikhyatk/moondream2"
@@ -37,7 +38,6 @@ for row in tqdm(pope_dataset):
             else:
                 stats[split] = (stats[split][0], stats[split][1] + 1)
 
-print(MODEL_ID, REVISION)
 print(
     "Random:",
     stats["random"][0],

@@ -1,7 +1,8 @@
 import editdistance
-from transformers import AutoTokenizer, AutoModelForCausalLM
 from datasets import load_dataset
 from tqdm import tqdm
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
 from ..hf import detect_device
 
 MODEL_ID = "vikhyatk/moondream2"
@@ -35,11 +36,10 @@ for row in tqdm(docvqa_val):
     for qa in row["qa"]:
         question = qa["question"]
         answers = qa["answers"]
-        prompt = f"{question} Answer briefly."
+        prompt = f"{question}\nAnswer briefly with a single word or phrase."
 
         model_answer = moondream.answer_question(enc_image, prompt, tokenizer)
         anls = max(get_anls(model_answer, gt) for gt in answers)
         scores.append(anls)
 
-print(MODEL_ID, REVISION)
 print("ANLS:", sum(scores) / len(scores))
